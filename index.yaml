@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  tonic:
+  - apiVersion: v2
+    appVersion: "130"
+    created: "2022-06-06T10:42:21.14132-07:00"
+    description: A Helm chart for Tonic and EKS
+    digest: eefb45ca71a0ecba14adf19698284920a3a6221c84fb2e7ed42b9a36bc81dd1e
+    name: tonic
+    type: application
+    urls:
+    - tonic-1.0.2.tgz
+    version: 1.0.2
+generated: "2022-06-06T10:42:21.140242-07:00"
