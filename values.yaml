@@ -117,4 +117,4 @@ tonicai:
 # awsLambdaRoleArn: arn:aws:iam::<accountId>:role/<role-name>
 
 # Your license should be configured by an admin within the Tonic UI. It can optionally be set here if there is no admin.
-# tonicLicense: <license-key>
+tonicLicense: <license-key>
