@@ -9,9 +9,11 @@ tonicdb:
   password: <password>
   sslMode: Require
 
+environmentName: hone-dev
+
 # tonicStatisticsSeed will cause generations to be consisent with each other for anything where consistency is set to true.
 # otherwise each generation will be internally consistent, but not consistent with other generations.
-tonicStatisticsSeed: <any-integer>
+tonicStatisticsSeed: 11101001010001100011100111010001
 
 # numberOfWorkers will determine how many worker containers are deployed when installing the helm chart.
 numberOfWorkers: 1
