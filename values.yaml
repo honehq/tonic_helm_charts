@@ -13,7 +13,7 @@ environmentName: hone-dev
 
 # tonicStatisticsSeed will cause generations to be consisent with each other for anything where consistency is set to true.
 # otherwise each generation will be internally consistent, but not consistent with other generations.
-tonicStatisticsSeed: 11101001010001100011100111010001
+tonicStatisticsSeed: 3567487829
 
 # numberOfWorkers will determine how many worker containers are deployed when installing the helm chart.
 numberOfWorkers: 1
@@ -39,7 +39,7 @@ tonicai:
     envRaw: {}
     image: quay.io/tonicai/tonic_web_server
     # Comma separated list of user emails that should be have the Admin role in Tonic.
-    administrators: example@email.com,other@email.com
+    administrators: admin-tonic@honehq.com
     annotations:
       # This annotation is only required if you are creating an internal facing ELB. Remove this annotation to create public facing ELB.
       service.beta.kubernetes.io/aws-load-balancer-internal: "true"
