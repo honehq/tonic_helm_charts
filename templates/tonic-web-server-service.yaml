@@ -3,13 +3,13 @@ kind: Service
 metadata:
   name: tonic-web-server
   namespace: {{ .Release.Namespace }}
-{{- if  ((.Values.tonicai).web_server).annotations }}
-  annotations:
-    {{- toYaml .Values.tonicai.web_server.annotations | nindent 4 }}
-{{- else }}
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
-{{- end }}
+# {{- if  ((.Values.tonicai).web_server).annotations }}
+#   annotations:
+#     {{- toYaml .Values.tonicai.web_server.annotations | nindent 4 }}
+# {{- else }}
+#   annotations:
+#     service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+# {{- end }}
 
   labels:
     app: tonic-web-server
@@ -18,6 +18,9 @@ spec:
   - name: "https"
     port: 443
     targetPort: 443
+  - name: "http"
+    port: 80
+    targetPort: 80
 # use_ingress currently only used by TIM
 {{- if eq (.Values.tonicai).use_ingress true }}
   type: ClusterIP
