@@ -40,6 +40,9 @@ tonicai:
     image: quay.io/tonicai/tonic_web_server
     # Comma separated list of user emails that should be have the Admin role in Tonic.
     administrators: admin-tonic@honehq.com
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-ssl-cert: <certificate arn>
+      service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "https"
     features:
       # Enables/Disables the HostIntegrations endpoint
       host_integration_enabled: "true"
