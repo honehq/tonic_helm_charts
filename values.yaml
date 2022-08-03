@@ -1,6 +1,3 @@
-# Use a Tonic license to enable different features. Your license key will be provided by Tonic.
-tonicLicense: <license-key>
-
 environmentName: <company-name>
 
 # tonicdb is the postgres database that will hold information about your workspace.
@@ -47,7 +44,7 @@ tonicai:
       service.beta.kubernetes.io/azure-load-balancer-internal: "true"
     features:
       # Enables/Disables the HostIntegrations endpoint
-      host_integration_enabled: "true" 
+      host_integration_enabled: "true"
       kubernetes_role: "default"
   worker:
     image: quay.io/tonicai/tonic_worker
@@ -118,3 +115,6 @@ tonicai:
 
 # Role used by Tonic to connect to AWS Lambda. This is needed for Snowflake and Redshift integrations.
 # awsLambdaRoleArn: arn:aws:iam::<accountId>:role/<role-name>
+
+# Your license should be configured by an admin within the Tonic UI. It can optionally be set here if there is no admin.
+# tonicLicense: <license-key>
