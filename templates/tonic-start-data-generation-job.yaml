@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: start-data-generation-job
+spec:
+  schedule: "@midnight"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: start-data-generation-job
+            image: {{ .Values.awsConfig.accountId }}.dkr.ecr.{{ .Values.awsConfig.region }}.amazonaws.com/tonic-start-data-generation-job:v1.0.0-1
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: TONIC_API_KEY
+              value: {{ .Values.tonicApiKey }}
+            - name: TONIC_API_HOST
+              value: tonic-web-server
+            - name: WORKSPACE_NAME
+              value: {{ .Values.tonicWorkspaceName }}
+          restartPolicy: OnFailure

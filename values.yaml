@@ -11,6 +11,9 @@ tonicdb:
 
 environmentName: hone-dev
 
+tonicApiKey: <tonic-api-key>
+tonicWorkspaceName: <tonic-workspace-name>
+
 # tonicStatisticsSeed will cause generations to be consisent with each other for anything where consistency is set to true.
 # otherwise each generation will be internally consistent, but not consistent with other generations.
 tonicStatisticsSeed: 1337
@@ -119,3 +122,7 @@ tonicai:
 
 # Your license should be configured by an admin within the Tonic UI. It can optionally be set here if there is no admin.
 tonicLicense: <license-key>
+
+awsConfig:
+  accountId: <aws account id>
+  region: <aws region>

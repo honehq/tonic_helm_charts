@@ -1,8 +1,8 @@
 apiVersion: v2
-name: tonic
+name: tonic-helm-chart
 description: A Helm chart for Tonic and EKS
 type: application
 
-version: "1.0.2"
+version: "1.0.3"
 
 appVersion: "130"
