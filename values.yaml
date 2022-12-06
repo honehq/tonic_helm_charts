@@ -60,6 +60,18 @@ tonicai:
     image: quay.io/tonicai/tonic_pii_detection
   pyml_service:
     image: quay.io/tonicai/tonic_pyml_service
+
+# Creates CronJob manifests to start data generation jobs for a workspace.
+dataGenerationJobs:
+  webAppStaging:
+    name: start-data-generation-web-app-staging
+    workspace: "Web App Stage"
+    schedule: "@midnight"
+  salesDemoWebAppDev:
+    name: start-data-generation-sales-demo-web-app-dev
+    workspace: "Sales Demo Web App Dev"
+    schedule: "@midnight"
+
 # Uncomment for Oracle Support. Valid versions are "19", "12_2", and "11_2".
 # oracle_helper:
 #   image: quay.io/tonicai/tonic_oracle_helper
