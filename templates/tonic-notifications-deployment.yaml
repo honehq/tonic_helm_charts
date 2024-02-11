@@ -1,3 +1,17 @@
+{{- /* support values file w/o resource definition */}}
+{{- $resources := coalesce
+  ((((.Values).tonicai).notifications).resources)
+  (dict "limits" (dict "memory" "1Gi") "requests" (dict "memory" "512Mi" "ephemeral-storage" "1Gi")) -}}
+{{ $image := "" }}
+{{- if  ((.Values.tonicai).notifications).image }}
+{{- $image = .Values.tonicai.notifications.image }}
+{{- else }}
+  {{- if .Values.useUnprivilegedContainers }}
+  {{- $image = "quay.io/tonicai/tonic_notifications_unprivileged" }}
+  {{- else }}
+  {{- $image = "quay.io/tonicai/tonic_notifications" }}
+  {{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,14 +24,40 @@ spec:
   selector:
     matchLabels:
       app: tonic-notifications
-  strategy: {}
+  strategy:
+    type: {{ template "tonic.deployStrategy" . }}
+  revisionHistoryLimit: 1
   template:
     metadata:
       labels:
         app: tonic-notifications
     spec:
+      securityContext:
+        {{- if .Values.useUnprivilegedContainers }}
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        {{- end }}
       containers:
-      - env:
+      - securityContext:
+          {{- if .Values.useUnprivilegedContainers }}
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          {{- end }}
+          {{- if .Values.readOnlyRootFilesystem }}
+          readOnlyRootFilesystem: true
+          {{- end }}
+        env:
+        {{- range $key, $value := ((.Values.tonicai).notifications).env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- if ((.Values.tonicai).notifications).envRaw }}
+        {{- with .Values.tonicai.notifications.envRaw }}
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- end }}
         - name: TONIC_DB_DATABASE
           value: {{ .Values.tonicdb.dbName }}
         - name: TONIC_DB_USERNAME
@@ -33,34 +73,32 @@ spec:
           value: {{ .Values.tonicdb.sslMode }}
         - name: TONIC_DB_HOST
           value: {{ .Values.tonicdb.host }}
-        {{- if .Values.tonicSmtpConfig }}
-        {{- if .Values.tonicSmtpConfig.tonicUrl }}
+        {{- if ((.Values).tonicSmtpConfig).tonicUrl }}
         - name: TONIC_URL
           value: {{ .Values.tonicSmtpConfig.tonicUrl }}
         {{- end}}
-        {{- if .Values.tonicSmtpConfig.sendingAddress }}
+        {{- if ((.Values).tonicSmtpConfig).sendingAddress }}
         - name: TONIC_NOTIFICATION_SENDING_ADDRESS
           value: {{ .Values.tonicSmtpConfig.sendingAddress }}
         {{- end}}
-        {{- if .Values.tonicSmtpConfig.smtpServerAddress }}
+        {{- if ((.Values).tonicSmtpConfig).smtpServerAddress }}
         - name: TONIC_NOTIFICATION_SMTP_SERVER_ADDRESS
           value: {{ .Values.tonicSmtpConfig.smtpServerAddress }}
         {{- end}}
-        {{- if .Values.tonicSmtpConfig.smtpServerPort }}
+        {{- if ((.Values).tonicSmtpConfig).smtpServerPort }}
         - name: TONIC_NOTIFICATION_SMTP_SERVER_PORT
           value: {{quote .Values.tonicSmtpConfig.smtpServerPort }}
         {{- end}}
-        {{- if .Values.tonicSmtpConfig.smtpUsername }}
+        {{- if ((.Values).tonicSmtpConfig).smtpUsername }}
         - name: TONIC_NOTIFICATION_SMTP_USERNAME
           value: {{ .Values.tonicSmtpConfig.smtpUsername }}
         {{- end}}
-        {{- if .Values.tonicSmtpConfig.smtpPassword }}
+        {{- if ((.Values).tonicSmtpConfig).smtpPassword }}
         - name: TONIC_NOTIFICATION_SMTP_PASSWORD
           valueFrom:
             secretKeyRef:
               name: tonic-smtp-password
               key: password
-        {{- end}}
         {{- end}}
         - name: ENABLE_LOG_COLLECTION
           value: {{quote .Values.enableLogCollection }}
@@ -70,41 +108,51 @@ spec:
           value: "7000"
         - name: TONIC_NOTIFICATIONS_HEALTH_PORT_HTTPS
           value: "7001"
-        {{- if  ((.Values.tonicai).notifications).image }}
-        image: {{ .Values.tonicai.notifications.image }}:{{ .Values.tonicVersion }}
-        {{ else }}
-        image: quay.io/tonicai/tonic_notifications:{{ .Values.tonicVersion }}
-        {{- end }}
+        image: {{ $image }}:{{ .Values.tonicVersion | default "latest" }}
         imagePullPolicy: Always
         name: tonic-notifications
+        volumeMounts:
+          {{- if .Values.readOnlyRootFilesystem }}
+          - name: vector
+            mountPath: /tonic/vector_data
+          - name: var-run-superd
+            mountPath: /var/run/supervisor
+          - name: var-log-superd
+            mountPath: /var/log/supervisor
+          - name: var-log-nginx
+            mountPath: /var/log/nginx
+          - name: tmp
+            mountPath: /tmp
+          {{- end }}
         resources:
-          limits:
-            memory: "1Gi"
-          requests:
-            memory: "512Mi"
-            ephemeral-storage: "1Gi"
+          {{- toYaml $resources | nindent 10 }}
         ports:
         - containerPort: 7000
         - containerPort: 7001
-        livenessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - ps -ef | grep Allos.Notifications.dll | grep -v grep
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - ps -ef | grep Allos.Notifications.dll | grep -v grep
-          initialDelaySeconds: 10
-          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            scheme: HTTPS
+            path: /health
+            port: 7001
+          initialDelaySeconds: 5
+          periodSeconds: 60
+          timeoutSeconds: 30
+          failureThreshold: 5
       restartPolicy: Always
       imagePullSecrets:
       - name: tonicai-build-writer-pull-secret
       serviceAccountName: {{ template "tonic.serviceAccountName" . }}
-      volumes: null
+      volumes:
+        {{- if .Values.readOnlyRootFilesystem }}
+        - name: tmp
+          emptyDir: {}
+        - name: var-log-superd
+          emptyDir: {}
+        - name: var-log-nginx
+          emptyDir: {}
+        - name: var-run-superd
+          emptyDir: {}
+        - name: vector
+          emptyDir: {}
+        {{- end }}
 status: {}

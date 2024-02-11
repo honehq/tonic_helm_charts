@@ -1,3 +1,26 @@
+{{- /* support values file w/o resource definition */}}
+{{- $resources := coalesce
+  ((((.Values).tonicai).pyml_service).resources)
+  (dict "limits" (dict "memory" "8Gi") "requests" (dict "memory" "512Mi" "ephemeral-storage" "1Gi")) -}}
+{{- $legacyGpuAmount := (((.Values).resources).pyml_gpu).amount -}}
+{{- $newGpuAmount := (get $resources.limits "nvida.com/gpu") }}
+{{- $gpuAmount := coalesce $newGpuAmount $legacyGpuAmount 0 -}}
+{{- if ($gpuAmount) -}}
+{{ $_ := set $resources.limits "nvida.com/gpu" $gpuAmount -}}
+{{- end -}}
+{{- $tolerations := (coalesce
+  ((((.Values).resources).pyml_gpu).tolerations)
+  ((((.Values).tonicai).pyml_service).tolerations)) -}}
+{{ $image := "" }}
+{{- if ((.Values.tonicai).pyml_service).image }}
+{{- $image = .Values.tonicai.pyml_service.image }}
+{{- else }}
+  {{- if .Values.useUnprivilegedContainers }}
+  {{- $image = "quay.io/tonicai/tonic_pyml_service_unprivileged" }}
+  {{- else }}
+  {{- $image = "quay.io/tonicai/tonic_pyml_service" }}
+  {{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,48 +33,107 @@ spec:
   selector:
     matchLabels:
       app: tonic-pyml-service
-  strategy: {}
+  strategy:
+    type: {{ template "tonic.deployStrategy" . }}
+  revisionHistoryLimit: 1
   template:
     metadata:
       labels:
         app: tonic-pyml-service
     spec:
+      securityContext:
+        {{- if .Values.useUnprivilegedContainers }}
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        {{- end }}
       containers:
-      - env:
+      - securityContext:
+          {{- if .Values.useUnprivilegedContainers }}
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          {{- end }}
+          {{- if .Values.readOnlyRootFilesystem }}
+          readOnlyRootFilesystem: true
+          {{- end }}
+        env:
+        {{- range $key, $value := ((.Values.tonicai).pyml_service).env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- if ((.Values.tonicai).pyml_service).envRaw }}
+        {{- with .Values.tonicai.pyml_service.envRaw }}
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- end }}
         - name: ENABLE_LOG_COLLECTION
           value: {{quote .Values.enableLogCollection }}
         - name: ENVIRONMENT_NAME
           value: {{ .Values.environmentName }}
-        {{- if  ((.Values.tonicai).pyml_service).image }}
-        image: {{ .Values.tonicai.pyml_service.image }}:{{ .Values.tonicVersion }}
-        {{ else }}
-        image: quay.io/tonicai/tonic_pyml_service:{{ .Values.tonicVersion }}
-        {{- end }}
+        image: {{ $image }}:{{ .Values.tonicVersion | default "latest" }}
         imagePullPolicy: Always
         name: tonic-pyml-service
+        volumeMounts:
+          {{- if .Values.readOnlyRootFilesystem }}
+          - name: tmp
+            mountPath: /tmp
+          - name: var-log-nginx
+            mountPath: /var/log/nginx
+          - name: var-log-superd
+            mountPath: /var/log/supervisor
+          - name: var-run-nginx
+            mountPath: /var/run/nginx
+          - name: var-run-superd
+            mountPath: /var/run/supervisor
+          - name: var-cache-nginx
+            mountPath: /var/cache/nginx
+          - name: vector
+            mountPath: /tonic/vector_data
+          - name: public-log
+            mountPath: /publish/logs_public
+          - name: log
+            mountPath: /publish/logs
+          {{- end }}
         ports:
         - containerPort: 7700
         resources:
-          limits:
-            memory: "1Gi"
-          requests:
-            memory: "512Mi"
-            ephemeral-storage: "1Gi"
-        livenessProbe:
+          {{- toYaml $resources | nindent 10 }}
+        startupProbe:
           httpGet:
             path: /health
             port: 7700
             scheme: HTTPS
-          initialDelaySeconds: 60
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 7700
-            scheme: HTTPS
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 5
+          periodSeconds: 60
+          timeoutSeconds: 30
+          failureThreshold: 5
       restartPolicy: Always
       imagePullSecrets:
       - name: tonicai-build-writer-pull-secret
-      serviceAccountName: ""
+      serviceAccountName: {{ template "tonic.serviceAccountName" . }}
+      volumes:
+        {{- if .Values.readOnlyRootFilesystem }}
+        - name: public-log
+          emptyDir: {}
+        - name: var-run-nginx
+          emptyDir: {}
+        - name: var-run-superd
+          emptyDir: {}
+        - name: var-log-nginx
+          emptyDir: {}
+        - name: var-log-superd
+          emptyDir: {}
+        - name: vector
+          emptyDir: {}
+        - name: var-cache-nginx
+          emptyDir: {}
+        - name: log
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+      tolerations:
+      {{- if $tolerations -}}
+      {{ toYaml $tolerations | nindent 8 }}
+      {{- end }}

@@ -1,3 +1,20 @@
+{{- $resources := coalesce
+  ((((.Values).tonicai).web_server).resources)
+  (dict "limits" (dict "memory" "3Gi") "requests" (dict "memory" "2Gi" "ephemeral-storage" "1Gi")) -}}
+{{ $image := "" }}
+{{- if  ((.Values.tonicai).web_server).image }}
+  {{ $image = .Values.tonicai.web_server.image }}
+{{ else }}
+  {{- if .Values.useUnprivilegedContainers }}
+  {{ $image = "quay.io/tonicai/tonic_web_server_unprivileged" }}
+  {{- else }}
+  {{ $image = "quay.io/tonicai/tonic_web_server" }}
+  {{- end }}
+{{- end }}
+{{- $ports := ((.Values.tonicai).web_server).ports | default dict }}
+{{- $httpsOnly := $ports.httpsOnly | default true }}
+{{- $httpPort := $ports.http | default 6580 }}
+{{- $httpsPort := $ports.https | default 6543 }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,19 +27,47 @@ spec:
   selector:
     matchLabels:
       app: tonic-web-server
-  strategy: {}
+  strategy:
+    type: {{ template "tonic.deployStrategy" . }}
+  revisionHistoryLimit: 1
   template:
     metadata:
       labels:
         app: tonic-web-server
     spec:
+      securityContext:
+        {{- if .Values.useUnprivilegedContainers }}
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        {{- end }}
       containers:
-      - env:
-        {{- range $key, $value := .Values.tonicai.web_server.env }}
+      - securityContext:
+          {{- if .Values.useUnprivilegedContainers }}
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          {{- end }}
+          {{- if .Values.readOnlyRootFilesystem }}
+          readOnlyRootFilesystem: true
+          {{- end }}
+        volumeMounts:
+        {{- if .Values.readOnlyRootFilesystem }}
+        - name: var-log
+          mountPath: /var/log/supervisor
+        - name: var-run
+          mountPath: /var/run/supervisor
+        - name: tmp
+          mountPath: /tmp
+        - name: vector
+          mountPath: /tonic/vector_data
+        {{- end }}
+        env:
+        {{- range $key, $value := ((.Values.tonicai).web_server).env }}
         - name: {{ $key }}
           value: {{ $value | quote }}
         {{- end }}
-        {{- if .Values.tonicai.web_server.envRaw }}
+        {{- if ((.Values.tonicai).web_server).envRaw }}
         {{- with .Values.tonicai.web_server.envRaw }}
             {{- toYaml . | nindent 12 }}
         {{- end }}
@@ -56,103 +101,67 @@ spec:
               name: tonic-license-secret
               key: license
               optional: true
-          {{- if .Values.tonicSsoConfig }}
-          {{- if .Values.tonicSsoConfig.provider }}
-        - name: TONIC_SSO_PROVIDER
-          value: {{quote .Values.tonicSsoConfig.provider }}
-          {{- end }}
-          {{- if .Values.tonicSsoConfig.domain }}
-        - name: TONIC_SSO_DOMAIN
-          value: {{quote .Values.tonicSsoConfig.domain }}
-          {{- end }}
-          {{- if .Values.tonicSsoConfig.clientId }}
-        - name: TONIC_SSO_CLIENT_ID
-          value: {{quote .Values.tonicSsoConfig.clientId }}
-          {{- end }}
-        - name: TONIC_SSO_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: tonic-sso-client-secret
-              key: secret
-              optional: true
-          {{- if .Values.tonicSsoConfig.identityProviderId }}
-        - name: TONIC_SSO_IDENTITY_PROVIDER_ID
-          value: {{quote .Values.tonicSsoConfig.identityProviderId }}
-          {{- end }}
-          {{- if .Values.tonicSsoConfig.authServerId }}
-        - name: TONIC_SSO_AUTHORIZATION_SERVER_ID
-          value: {{quote .Values.tonicSsoConfig.authServerId }}
-          {{- end }}
-          {{- if .Values.tonicSsoConfig.groupFilter }}
-        - name: TONIC_SSO_GROUP_FILTER_REGEX
-          value: {{quote .Values.tonicSsoConfig.groupFilter }}
-          {{- end }}
-          {{- if .Values.tonicSsoConfig.samlIdpMetadata }}
-        - name: TONIC_SSO_SAML_IDP_METADATA_XML_BASE64
-          value: {{quote .Values.tonicSsoConfig.samlIdpMetadata }}
-          {{- end }}
-          {{- if .Values.tonicSsoConfig.tenantId }}
-        - name: TONIC_SSO_TENANT_ID
-          value: {{quote .Values.tonicSsoConfig.tenantId }}
-          {{- end }}
-        - name: TONIC_SSO_SERVICE_ACCOUNT_JSON_BASE64
-          valueFrom:
-            secretKeyRef:
-              name: tonic-sso-google-account-service-json-secret
-              key: secret
-              optional: true
-          {{- end }}
-        {{- if eq ((((.Values.tonicai).web_server).features).host_integration_enabled | default "false") "true" }}
+        {{- if .Values.tonicSsoConfig }}
+        {{- include "tonic.sso" .Values.tonicSsoConfig | nindent 8 }}
+        {{- end }}
+        {{- if eq (include "tonic.hostIntegration" .) "true"}}
         - name: TONIC_HOST_INTEGRATION
           value: "kubernetes"
         - name: TONIC_KUBERNETES_NAMESPACE
           value: {{ .Release.Namespace }}
         {{- end }}
-        {{- if .Values.tonicai.web_server.administrators }}
+        {{- if ((.Values.tonicai).web_server).administrators }}
         - name: TONIC_ADMINISTRATORS
           value: {{ .Values.tonicai.web_server.administrators }}
         {{- end }}
-        - name: TONIC_SPARK_URL
-          value: https://tonic-spark-helper:5501
         - name: TONIC_NOTIFICATIONS_URL
           value: http://tonic-notifications:7000
         - name: TONIC_PYML_URL
           value: https://tonic-pyml-service:7700
-        {{- if  ((.Values.tonicai).web_server).image }}
-        image: {{ .Values.tonicai.web_server.image }}:{{ .Values.tonicVersion }}
-        {{ else }}
-        image: quay.io/tonicai/tonic_web_server:{{ .Values.tonicVersion }}
+        {{- if not $httpsOnly }}
+        - name: TONIC_PORT_HTTP
+          value: {{ $httpPort | quote }}
         {{- end }}
+        - name: TONIC_PORT_HTTPS
+          value: {{ $httpsPort | quote }}
+        - name: TONIC_HTTPS_ONLY
+          value: {{ $httpsOnly | quote }}
+        image: {{ $image }}:{{ .Values.tonicVersion | default "latest" }}
         imagePullPolicy: Always
         name: tonic-web-server
         ports:
-        - containerPort: 80
-        - containerPort: 443
+        {{- if not $httpsOnly }}
+        - containerPort: {{ $httpPort }}
+          name: "http"
+        {{- end }}
+        - containerPort: {{ $httpsPort }}
+          name: "https"
         resources:
-          limits:
-            memory: "3Gi"
-          requests:
-            memory: "2Gi"
-            ephemeral-storage: "1Gi"
-        livenessProbe:
-          exec:
-            command:
-            - /bin/bash
-            - -c
-            - ps -ef | grep Allos.Api.dll | grep -v grep
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - /bin/bash
-            - -c
-            - ps -ef | grep Allos.Api.dll | grep -v grep
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          {{- toYaml $resources | nindent 10 }}
+        startupProbe:
+          httpGet:
+            scheme: HTTPS
+            path: /health
+            port: {{ $httpsPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 60
+          timeoutSeconds: 30
+          failureThreshold: 5
       restartPolicy: Always
       serviceAccountName: {{ template "tonic.serviceAccountName" . }}
       imagePullSecrets:
       - name: tonicai-build-writer-pull-secret
-      volumes: null
+      volumes:
+      {{- if .Values.readOnlyRootFilesystem }}
+      - name: var-run
+        emptyDir: {}
+      - name: var-log
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - name: vector
+        emptyDir: {}
+      - name: db2
+        emptyDir: {}
+      {{- end }}
 status: {}
